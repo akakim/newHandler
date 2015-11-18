@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.javaplugin_m10_t19_c23_1008"
+    android:versionCode="1"
+    android:versionName="1.0" >
+    
+    <uses-sdk
+        android:minSdkVersion="14"
+        android:targetSdkVersion="23" />
+        
+    
+
+
+    <permission
+        android:name="android.permission.BLUETOOTH"
+        android:label="BLUETOOTH" />
+    <permission android:name="android.permission.BLUETOOTH_ADMIN" />
+  	<permission android:name="android.permission.ACCESS_COARSE_LOCATION"></permission>
+
+
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+	<uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+	<uses-permission-sdk-m android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+   
+    <application
+        android:allowBackup="true"
+         android:icon="@drawable/app_icon"
+         android:label="@string/app_name" >
+        
+        <activity
+            android:name="com.javaplugin_m10_t19_c23_1008.MainActivity"
+            android:label="@string/app_name"
+            android:launchMode="singleTask" android:configChanges="orientation|keyboard"
+              >
+              
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            
+         
+        <activity
+            android:name=".SubActivity"
+             android:label="@string/app_name"
+             android:launchMode="singleTask" android:configChanges="orientation|keyboard" >
+            <intent-filter >
+                <action android:name="com.javaplugin_m10_t19_c23_1008.SubActivity" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+        
+  
+            <meta-data
+             android:name="unityplayer.UnityActivity"
+             android:value="true" />
+             <meta-data android:name="android.app.lib_name"
+             android:value="unity" />
+               <meta-data 
+               android:name="unityplayer.ForwardNativeEventsToDalvik"
+               android:value="true" />
+        </activity>
+    </application>
+
+</manifest>
