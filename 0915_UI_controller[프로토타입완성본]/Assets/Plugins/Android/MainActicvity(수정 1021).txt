@@ -1,0 +1,532 @@
+package com.javaplugin_m10_t19_c23_1008;
+
+
+import java.io.IOException;
+import java.lang.ref.WeakReference;
+import java.util.ArrayList;
+import java.util.Set;
+import java.util.UUID;
+
+import com.unity3d.player.UnityPlayer;
+import com.unity3d.player.UnityPlayerActivity;
+
+import android.app.ProgressDialog;
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothProfile;
+import android.bluetooth.BluetoothSocket;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.os.AsyncTask;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Message;
+import android.util.Log;
+
+public class MainActivity extends UnityPlayerActivity {
+
+
+    public ArrayList<String> pairedIDList = new ArrayList<String>();
+    public ArrayList<String> pairingIDList = new ArrayList<String>();
+
+    // 유니티를 위한 변수들 메세지를 한번에 하나씩 보내야만해서 만듬.
+    public int pairedIDListSize = 0;
+    public int pairingIDListSize = 0;
+    public int index_ID = 0;
+    public int index_pairingID = 0;
+    public int index_Address= 0;
+    public int index_pairingAddress= 0;
+
+    // 테스팅을 위함. 테그랑 IS_TEST 변수만 바꾸면 Log에 메세지가 뜸
+    private static final String  TAG = "Unity : ";
+    private static final boolean IS_TEST = true; // for testing mode
+
+    // 블루투스 통신 관련 변수.
+    private              BluetoothAdapter      myBluetoothAdapter = null;
+    private              Set<BluetoothDevice>  myBluetoothDevice = null;
+    private              BluetoothSocket       btSocket = null;
+    private              ConnectBT ForDevice;
+
+    static          final UUID myUUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
+
+    private               ArrayList pairedlist;
+    private               ArrayList pairinglist;
+
+    private static final String TestMacAddress = "98:D3:31:30:1A:53";
+
+    // UI 관련
+    private               ProgressDialog        progress;
+    private               Handler               handler;
+
+    private static final int BT_ON = 1;
+    private static final int BT_CONNECT_TO_DEVICE = 2;
+    private static final int BT_DISCOVERY_MODE = 3;
+    private static final int BT_DISCONNECTED =4;
+    private static final int DISMISS = 5;
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+
+        if(IS_TEST)
+            Log.d(TAG, "OnCreate()");
+
+        //showing a message. that the device has no bluetooth adapter
+        myBluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
+
+        if (myBluetoothAdapter == null) {
+            Log.v(TAG, "Bluetooth Error Adapter is unable to use ");
+            finish();
+        }
+
+        myBluetoothDevice = myBluetoothAdapter.getBondedDevices();
+
+        pairedlist = new ArrayList();
+        pairinglist = new ArrayList();
+        handler    = new InnerHandler(this);
+        progress    = new ProgressDialog(this);
+        progress.setProgressStyle(ProgressDialog.STYLE_SPINNER);
+        progress.setCancelable(true);
+        if (myBluetoothDevice.size() <= 0) {
+            Log.v(TAG,"No paired Device");
+        }
+
+        IntentFilter filter = new IntentFilter(BluetoothDevice.ACTION_FOUND);
+        filter.addAction(BluetoothAdapter.ACTION_DISCOVERY_FINISHED);
+        filter.addAction(BluetoothAdapter.ACTION_STATE_CHANGED);
+        filter.addAction(BluetoothAdapter.ACTION_CONNECTION_STATE_CHANGED);
+
+        this.registerReceiver(mReceiver, filter);
+
+    }
+
+
+    @Override
+    public void onDestroy(){
+        super.onDestroy();
+        if(IS_TEST)
+            Log.d(TAG,"onDestroy()");
+
+        // Make sure we're not doing discovery anymore
+        if (myBluetoothAdapter != null) {
+            myBluetoothAdapter.cancelDiscovery();
+        }
+
+        // Unregister broadcast listeners
+        this.unregisterReceiver(mReceiver);
+        try {
+            btSocket.close();
+            btSocket = null;
+        }catch(Exception e){
+
+        }
+
+    }
+    @Override
+    public void onStop(){
+        super.onStop();
+        try{
+            BluetoothDisconnect();
+        }catch (Exception e){
+
+        }
+    }
+
+    public void onRestart(){
+        super.onRestart();
+
+        // pairing list 관련된 인수들 초기화.
+        /*
+        pairinglist.clear();
+        pairingIDList.clear();
+        pairingIDListSize = 0;
+        index_pairingID   = 0;*/
+    }
+
+
+    //sendPairedID() sends the pairedIDList[] to Unity's SetPairedList(str )
+    public void sendPairedID(){
+
+        if(IS_TEST){
+            Log.v(TAG,"sendPairedID()");
+        }
+
+        if(index_ID==pairedIDList.size())
+        {
+            Log.d(TAG,"index_ID == pairedIDList.size()");
+        }
+        else
+        {
+            UnityPlayer.UnitySendMessage("AndroidManager","SetPairedList", pairedIDList.get(index_ID));
+            index_ID++;
+        }
+
+
+    }
+
+    //sendPairingID() sends the pairingIDList[] to Unity's SetPairingList(str )
+    public void sendPairingID(){
+
+        if(IS_TEST){
+            Log.v(TAG,"sendPairingID()");
+        }
+
+        if(index_pairingID==pairingIDList.size())
+        {
+
+            Log.v(TAG,"index_pairingID == pairingIDList.size()" );
+            Log.v(TAG,"index_pairingID : " + index_pairingID);
+            Log.v(TAG,"pairingIDLIst.size() : "+ pairedIDList.size());
+        }
+        else
+        {
+            UnityPlayer.UnitySendMessage("AndroidManager","SetPairingList", pairingIDList.get(index_pairingID));
+            index_pairingID++;
+        }
+
+
+    }
+
+
+    public void ViewPairedList(){
+
+        if(IS_TEST)
+            Log.d(TAG, "ViewPairedList");
+
+        String tmp = "No Device";
+
+        for(BluetoothDevice bt : myBluetoothDevice){
+
+            tmp = bt.getName();
+            pairedIDList.add(tmp);
+            pairedlist.add(bt.getAddress());
+            if(IS_TEST) {
+                Log.d(TAG, "tmp: " + tmp);
+                Log.d(TAG, "pairedList[" + index_Address + "]:" + pairedlist.get(index_Address));
+            }
+            index_Address++;
+        }
+
+    }
+
+    public void ViewPairingList(){
+        if(IS_TEST){
+            Log.v(TAG,"ViewParingList()");
+        }
+
+
+        pairinglist.clear();
+        pairingIDListSize = 0;
+        pairingIDList.clear();
+        index_pairingID = 0;
+        index_pairingAddress = 0;
+        // If we're already discovering, stop it
+        if (this.myBluetoothAdapter.isDiscovering()) {
+            this.myBluetoothAdapter.cancelDiscovery();
+        }
+
+
+        handler.sendEmptyMessage(BT_DISCOVERY_MODE);
+        // Request discover from BluetoothAdapter
+        this.myBluetoothAdapter.startDiscovery();
+    }
+
+
+
+    public void ConnectPairedDevice(String indexFromUnity){
+        int index = Integer.parseInt(indexFromUnity) - 1; //indexFrom Unity는 버튼 순서 1부터 해당, 인덱스는 0부터. 따라서 -1해줌.
+        String address = pairedlist.get(index).toString();
+        if(IS_TEST) {
+            Log.d(TAG, "ConnectPairedDevice() address: " + address);
+        }
+        ForDevice = new ConnectBT();
+        ForDevice.setMacAddress(address);
+        handler.sendEmptyMessage(BT_CONNECT_TO_DEVICE);
+        ForDevice.execute();
+  //      handler.sendEmptyMessage(DISMISS);
+    }
+
+    public void ConnectPairingDevice(String indexFromUnity){
+
+        int index = Integer.parseInt(indexFromUnity) -1 ; //indexFrom Unity는 버튼 순서 1부터 해당, 인덱스는 0부터. 따라서 -1해줌.
+        String address = pairinglist.get(index).toString();
+        if(IS_TEST) {
+            Log.d(TAG, "ConnectPairingDevice() address: " + address);
+        }
+
+        ForDevice = new ConnectBT();
+        handler.sendEmptyMessage(BT_CONNECT_TO_DEVICE);
+        ForDevice.setMacAddress(address);
+        ForDevice.execute();
+//        handler.sendEmptyMessage(DISMISS);
+    }
+
+    public void JoyStickControl(String strPosition)
+    {
+        // 너무 로그가 길면 에러남 20자 이하로 작성해야함.
+        if(IS_TEST)
+            Log.d(TAG,"JoyStick Pos :"+strPosition );
+
+        char [] tmp = strPosition.toCharArray();
+        if (btSocket.isConnected()) {
+            try {
+                for (int i = 0; i < tmp.length; i++)
+                    btSocket.getOutputStream().write(tmp[i]);
+            } catch (IOException e) {
+                Log.e(TAG, "socket error");
+            }
+        }
+    }
+
+    public void SendToDevice(String MsgFromUnity){
+        int msg = Integer.parseInt(MsgFromUnity);
+        String strMsg="No Message";
+        switch (msg){
+            case 0: //stop
+                strMsg = "#+00+00@";
+                break;
+            case 1: //forward
+                strMsg = "#+00+99@";
+                break;
+            case 2: //backward
+                strMsg = "#+00-99@";
+                break;
+            case 3: //left
+                strMsg = "#-99+00@";
+                break;
+            case 4: //right
+                strMsg = "#+99+00@";
+                break;
+            case 5: // gear up
+                strMsg = "+";
+                break;
+            case 6: //gear down
+                strMsg = "-";
+                break;
+
+            default:
+                strMsg = "default";
+        }
+
+        Log.v(TAG, "int :" + msg + "String : " + strMsg);
+        try {
+            btSocket.getOutputStream().write(strMsg.getBytes());
+        }
+        catch(IOException e){
+            Log.v(TAG, "socket error");
+        }
+    }
+
+    //TestForDevice
+    public void BluetoothDialog(){
+
+        if(!myBluetoothAdapter.isEnabled()){
+            Log.v(TAG,"BT_ON");
+            handler.sendEmptyMessage(BT_ON);
+            myBluetoothAdapter.enable();
+        }
+        else {
+            Log.v(TAG,"Init..");
+            myBluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
+            myBluetoothDevice = myBluetoothAdapter.getBondedDevices();
+
+            ViewPairedList();
+            sendPairedID();
+        }
+
+    }
+
+
+
+
+
+    public void TestForDevice2(){
+
+        ConnectBT ForDevice = new ConnectBT();
+        ForDevice.setMacAddress(TestMacAddress);
+        ForDevice.execute();
+
+    }
+
+
+    public void BluetoothDisconnect(){
+        try {
+            btSocket.close();
+            btSocket = null;
+
+        }
+        catch(Exception e){
+
+        }
+    }
+
+    public void checkConnect(String MsgUnity){
+        if(myBluetoothAdapter.isEnabled() && btSocket.isConnected()){
+            //UnityPlayerActivity("AndroidManager", "", "");
+        }
+    }
+    public void setProgressDialogText(String msg){
+        progress.setMessage(msg);
+        progress.show();
+    }
+
+    public void dismissProgressdialog(){
+        progress.dismiss();
+    }
+
+
+    private final BroadcastReceiver mReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String action = intent.getAction();
+            String tmpForPairing;
+
+            // When discovery finds a device
+            if (BluetoothDevice.ACTION_FOUND.equals(action)) {
+                // Get the BluetoothDevice object from the Intent
+                BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
+                // If it's already paired, skip it, because it's been listed already
+                if (device.getBondState() != BluetoothDevice.BOND_BONDED) { //
+
+                    tmpForPairing = device.getName();
+                    pairingIDList.add(tmpForPairing);
+
+                    pairinglist.add(device.getAddress());
+                    if(IS_TEST) {
+                        Log.d(TAG, "paringIDList: [" + index_pairingID + "]:" + pairingIDList + " " + pairingIDList.get(index_pairingID));
+                        Log.d(TAG, "pairingList[" + index_pairingAddress + "]:" + pairinglist.get(index_pairingAddress));
+                    }
+                    index_pairingAddress++;
+
+                }
+            } else if (BluetoothAdapter.ACTION_DISCOVERY_FINISHED.equals(action)) {
+
+                if (pairedlist.isEmpty() && pairinglist.isEmpty()) {
+                    Log.v(TAG,"No Device is searched");
+                }
+                sendPairingID();
+                handler.sendEmptyMessage(DISMISS);
+            }
+            else if(myBluetoothAdapter.getState() == BluetoothAdapter.STATE_ON){
+                if(IS_TEST){
+                    Log.v(TAG,"Bluetooth on now initialize");
+                }
+                myBluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
+                myBluetoothDevice = myBluetoothAdapter.getBondedDevices();
+                ViewPairedList();
+                sendPairedID();
+                handler.sendEmptyMessage(DISMISS);
+            }
+            else if(BluetoothAdapter.ACTION_CONNECTION_STATE_CHANGED.equals(action)){
+                if (myBluetoothAdapter.getProfileConnectionState(BluetoothProfile.STATE_DISCONNECTED) == BluetoothAdapter.STATE_DISCONNECTED) {
+                    try {
+                        btSocket.close();
+                        btSocket = null;
+                    } catch (Exception e) {
+                        Log.v(TAG, "Socket error in Broadcast");
+                    }
+                }
+            }
+
+        }
+    };
+
+
+    private class ConnectBT extends AsyncTask <Void,Void,Void> // UI Thread
+    {
+        private boolean ConnectSuccess = true; // if it's here, it's almost connected
+        private String MAC_address;
+        private boolean For_paired_device = true;
+
+        protected void onPreExcute() {
+            //              progress = ProgressDialog.show(ledControl.this, "Connectting...", "Please wait!");
+            // show a progress dialog
+        }
+
+        public void setPaired(boolean f){
+            For_paired_device = f;
+        }
+        public void setMacAddress(String address){
+            MAC_address = address;
+        }
+
+        protected Void doInBackground(Void... devices) { // while the progress dialog is shown, the connection is done in background
+            try{
+
+                if(IS_TEST){
+                    if (For_paired_device){
+                        Log.v(TAG,"do In Background() for paired");
+                    }
+                    else {
+                        Log.v(TAG,"do In Background() for pairing");
+                    }
+                }
+
+                if(btSocket == null){
+
+                    BluetoothDevice dispositivo = myBluetoothAdapter.getRemoteDevice(MAC_address); //  98:D3:31:30:1A:53 here is my target MAC Address .
+                    //connect to the device's address and checks if it's available
+                    btSocket = dispositivo.createInsecureRfcommSocketToServiceRecord(myUUID);
+
+                    //create RFCOMM(SPP) connection
+                    BluetoothAdapter.getDefaultAdapter().cancelDiscovery();
+                    btSocket.connect();
+                    handler.sendEmptyMessage(DISMISS);
+                }
+            }
+            catch (IOException e){
+                ConnectSuccess = false;
+            }
+            return null;
+        }
+
+        protected void onPostExcute(Void result) // after the doInBackground,it checks if everything went fine
+        {
+            super.onPostExecute(result);
+            if(!ConnectSuccess){
+                Log.v(TAG,"Connection Faile");
+                finish();
+            }
+            else{
+                Log.v(TAG,"Connected");
+            }
+        }
+
+    }
+
+    // 프로그래스바 다루는 핸들러
+    private static class InnerHandler extends Handler {
+        private final WeakReference<MainActivity> mActivity;
+
+        public InnerHandler(MainActivity activity) {
+            mActivity = new WeakReference<MainActivity>(activity);
+        }
+
+        @Override
+        public void handleMessage(Message msg) {
+            MainActivity activity = mActivity.get();
+            if (activity != null) {
+//                Log.v(TAG,"branch what is message");
+                if (msg.what == BT_ON) {
+                    activity.setProgressDialogText("Awake Bluetooth");
+                    Log.v(TAG, "BT_ON");
+                } else if (msg.what == BT_CONNECT_TO_DEVICE) {
+                    activity.setProgressDialogText("Connect to Device");
+                    Log.v(TAG, "BT_CONNECT_TO_DEVICE");
+                } else if (msg.what == BT_DISCOVERY_MODE) {
+                    activity.setProgressDialogText("Bluetooth is discovering..");
+                    Log.v(TAG, "BT_DISCOVERY_MOD");
+                }
+                else if (msg.what == BT_DISCONNECTED){
+                    activity.setProgressDialogText("connect end");
+                }
+                else if (msg.what == DISMISS){
+                    activity.dismissProgressdialog();
+                    Log.v(TAG, "DISMISS");
+                }
+
+            }
+        }
+    }
+}
