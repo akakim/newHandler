@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- From: file:/C:/Users/d20-2/AndroidStudioProjects/javaplugin_m10_t19_c23_1008/app/build/intermediates/bundles/debug/res/values-w820dp/values-w820dp.xml -->
+    <eat-comment/>
+    <dimen name="activity_horizontal_margin">64dp</dimen>
+</resources>
